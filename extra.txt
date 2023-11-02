@@ -1,0 +1,180 @@
+export const changePassword = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+    const getUserID: any = jwt.verify(
+      token,
+      "secret",
+      (err: any, payload: any) => {
+        if (err) {
+          return err;
+        } else {
+          return payload;
+        }
+      }
+    );
+    const user = await authModel.findById(getUserID.id);
+
+    if (user?.verify && user.token !== "") {
+      const salt: any = await bcrypt.genSalt(10);
+      const hash: any = await bcrypt.hash(password, salt);
+
+      const pass = await authModel.findByIdAndUpdate(
+        user._id,
+        { password: hash, token: "" },
+        { new: true }
+      );
+      return res.status(201).json({
+        message: "changed password",
+        data: pass,
+      });
+    } else {
+      return res.status(404).json({
+        message: "user have not been verified",
+      });
+    }
+  } catch (error: any) {
+    return res.status(404).json({
+      message: "error",
+      data: error.message,
+    });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    const user = await authModel.findOne({ email });
+
+    if (user?.verify && user.token === "") {
+      const token = jwt.sign({ id: user._id }, "secret");
+
+      const reset = await authModel.findByIdAndUpdate(
+        user._id,
+        {
+          token,
+        },
+        { new: true }
+      );
+      resetAccountPassword(user).then(() => {
+        console.log("sent reset password mail");
+      });
+      return res.status(201).json({
+        message: "success",
+        data: reset,
+      });
+    } else {
+      return res.status(403).json({
+        message: "cannot reset password",
+      });
+    }
+  } catch (error: any) {
+    return res.status(404).json({
+      message: error.message,
+    });
+  }
+};
+
+
+
+
+email extra
+export const resetAccountPassword = async (user: any,) => {
+  try {
+    const getAccess: any = (await oAuth.getAccessToken()).token;
+
+    const transport = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        type: "OAuth2",
+        user: "eumeh3882@gmail.com",
+        clientId: GOOGLE_ID,
+        clientSecret: GOOGLE_SECRET,
+        refreshToken: GOOGLE_REFRESH_TOKEN,
+        accessToken: getAccess,
+      },
+    });
+
+    const token = jwt.sign({ id: user._id }, "secret");
+
+    const passedData = {
+      userName: user.name,
+      url: `https://two-auth-challenge.web.app/${token}/reset-password`,
+    };
+
+    const readData = path.join(__dirname, "../views/resetPassword.ejs");
+    const data = await ejs.renderFile(readData, passedData);
+
+    const mailer = {
+      from: " <eumeh3882@gmail.com > ",
+      to: user.email,
+      subject: "Welcome you can now reset your password",
+      html: data,
+    };
+
+    transport.sendMail(mailer);
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+EJS
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>reset password</title>
+  </head>
+  <body>
+    <div>forgotten your password</div>
+
+    <br />
+    <div>you can reset your password</div>
+    <br />
+    <br />
+    <a href="<%= url%>" style="text-decoration: none">reset password</a>
+  </body>
+</html>
+
+ROUTE
+import { Router } from "express";
+import {
+  changePassword,
+  deleteOne,
+  firstVerified,
+  getAll,
+  getOne,
+  register,
+  resetPasword,
+  signIn,
+  verifyAccount,
+} from "../Controller/authController";
+import validatorHandler from "../utils/validatorHandler";
+import {
+  changedPasswordValidator,
+  registerValidator,
+  resetPasswordValidator,
+  signInValidator,
+} from "../utils/validator";
+
+const router = Router();
+
+router
+  .route("/create-user")
+  .post(validatorHandler(registerValidator), register);
+router.route("/sign-in").post(validatorHandler(signInValidator), signIn);
+router.route("/get-all").get(getAll);
+router.route("/:userID/get-one").get(getOne);
+router.route("/:userID/delete-one").delete(deleteOne);
+router
+  .route("/:token/change-password")
+  .patch(validatorHandler(changedPasswordValidator), changePassword);
+router
+  .route("/reset-password")
+  .patch(validatorHandler(resetPasswordValidator), resetPasword);
+router.route("/:token/first-verify").get(firstVerified);
+router.route("/:token/verify-account").get(verifyAccount);
+router.route("/:token/verify-account").get(verifyAccount);
+export default router;
